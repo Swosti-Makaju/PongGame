@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pong Game</title>
+    <!-- Use Tailwind CSS for a modern look -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background-color: #0f172a; /* Slate-900 */
+            color: #e2e8f0; /* Slate-200 */
+            font-family: 'Inter', sans-serif;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+        canvas {
+            border: 4px solid #475569; /* Slate-600 */
+            border-radius: 1rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            touch-action: none; /* Prevents mobile scrolling */
+        }
+        .container {
+            position: relative;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+        }
+        #game-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            border-radius: 1rem;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            transition: opacity 0.3s ease-in-out;
+        }
+    </style>
+</head>
+<body>
+
+    <h1 class="text-4xl md:text-5xl lg:text-6xl font-extrabold mb-8 text-white tracking-wide">PONG</h1>
+
+    <div class="container">
+        <canvas id="pongCanvas" width="800" height="500"></canvas>
+        <div id="game-overlay" class="p-4">
+            <h2 id="overlay-text" class="text-2xl md:text-3xl font-semibold mb-4 text-white"></h2>
+            <p id="overlay-instructions" class="text-sm md:text-base text-gray-400 mb-6 max-w-sm"></p>
+            <button id="playButton" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-full shadow-lg transform transition duration-300 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-slate-900">
+                Play
+            </button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('pongCanvas');
+        const ctx = canvas.getContext('2d');
+        const playButton = document.getElementById('playButton');
+        const overlay = document.getElementById('game-overlay');
+        const overlayText = document.getElementById('overlay-text');
+        const overlayInstructions = document.getElementById('overlay-instructions');
+
+        // Game constants
+        const PADDLE_WIDTH = 15;
+        const PADDLE_HEIGHT = 100;
+        const BALL_SIZE = 16;
+        const PLAYER_X = 30;
+        const AI_X = canvas.width - 30 - PADDLE_WIDTH;
+        const WINNING_SCORE = 10;
+        
+        let isGameActive = false;
+        let playerY = (canvas.height - PADDLE_HEIGHT) / 2;
+        let aiY = (canvas.height - PADDLE_HEIGHT) / 2;
+        let ball = {
+            x: canvas.width / 2 - BALL_SIZE / 2,
+            y: canvas.height / 2 - BALL_SIZE / 2,
+            vx: 0,
+            vy: 0
+        };
+        let playerScore = 0;
+        let aiScore = 0;
+
+        // Mouse/Touch control for player paddle
+        function handleInput(e) {
+            e.preventDefault();
+            let clientY;
+            if (e.type === 'mousemove') {
+                clientY = e.clientY;
+            } else if (e.type.startsWith('touch')) {
+                clientY = e.touches[0].clientY;
+            }
+            
+            const rect = canvas.getBoundingClientRect();
+            let mouseY = clientY - rect.top;
+            playerY = mouseY - PADDLE_HEIGHT / 2;
+            // Clamp within canvas
+            playerY = Math.max(0, Math.min(canvas.height - PADDLE_HEIGHT, playerY));
+        }
+
+        canvas.addEventListener('mousemove', handleInput);
+        canvas.addEventListener('touchmove', handleInput, { passive: false });
+
+        // Draw paddles, ball, and scores
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw center line
+            ctx.strokeStyle = "#475569";
+            ctx.setLineDash([10, 15]);
+            ctx.beginPath();
+            ctx.moveTo(canvas.width / 2, 0);
+            ctx.lineTo(canvas.width / 2, canvas.height);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // Draw paddles
+            ctx.fillStyle = "#818cf8"; /* Indigo-400 */
+            ctx.fillRect(PLAYER_X, playerY, PADDLE_WIDTH, PADDLE_HEIGHT);
+
+            ctx.fillStyle = "#f87171"; /* Red-400 */
+            ctx.fillRect(AI_X, aiY, PADDLE_WIDTH, PADDLE_HEIGHT);
+
+            // Draw ball
+            ctx.fillStyle = "#e2e8f0"; /* Slate-200 */
+            ctx.fillRect(ball.x, ball.y, BALL_SIZE, BALL_SIZE);
+
+            // Draw scores
+            ctx.font = "bold 48px 'Inter', sans-serif";
+            ctx.fillStyle = "#94a3b8"; /* Slate-400 */
+            ctx.fillText(playerScore, canvas.width / 4, 70);
+            ctx.fillText(aiScore, 3 * canvas.width / 4, 70);
+        }
+
+        // Ball movement and collision
+        function updateBall() {
+            ball.x += ball.vx;
+            ball.y += ball.vy;
+
+            // Top and bottom wall collision
+            if (ball.y <= 0 || ball.y + BALL_SIZE >= canvas.height) {
+                ball.vy *= -1;
+            }
+
+            // Left paddle collision
+            if (
+                ball.x <= PLAYER_X + PADDLE_WIDTH &&
+                ball.x >= PLAYER_X &&
+                ball.y + BALL_SIZE >= playerY &&
+                ball.y <= playerY + PADDLE_HEIGHT
+            ) {
+                ball.vx *= -1.1; // Increase speed slightly
+                ball.vy += (Math.random() - 0.5) * 2;
+                ball.x = PLAYER_X + PADDLE_WIDTH;
+            }
+
+            // Right (AI) paddle collision
+            if (
+                ball.x + BALL_SIZE >= AI_X &&
+                ball.x + BALL_SIZE <= AI_X + PADDLE_WIDTH &&
+                ball.y + BALL_SIZE >= aiY &&
+                ball.y <= aiY + PADDLE_HEIGHT
+            ) {
+                ball.vx *= -1.1; // Increase speed slightly
+                ball.vy += (Math.random() - 0.5) * 2;
+                ball.x = AI_X - BALL_SIZE;
+            }
+
+            // Left wall - AI scores
+            if (ball.x < 0) {
+                aiScore++;
+                resetBall();
+            }
+            // Right wall - Player scores
+            if (ball.x + BALL_SIZE > canvas.width) {
+                playerScore++;
+                resetBall();
+            }
+        }
+
+        // Reset ball to center
+        function resetBall() {
+            ball.x = canvas.width / 2 - BALL_SIZE / 2;
+            ball.y = canvas.height / 2 - BALL_SIZE / 2;
+            ball.vx = 5 * (Math.random() > 0.5 ? 1 : -1);
+            ball.vy = 4 * (Math.random() > 0.5 ? 1 : -1);
+            
+            checkGameOver();
+        }
+
+        // Basic AI movement
+        function updateAI() {
+            let target = ball.y + BALL_SIZE / 2 - PADDLE_HEIGHT / 2;
+            const aiSpeed = Math.abs(ball.vy) * 1.1; // AI speed scales with ball speed
+            if (aiY < target) {
+                aiY += aiSpeed;
+            } else if (aiY > target) {
+                aiY -= aiSpeed;
+            }
+            aiY = Math.max(0, Math.min(canvas.height - PADDLE_HEIGHT, aiY));
+        }
+
+        // Check for a game over condition
+        function checkGameOver() {
+            if (playerScore >= WINNING_SCORE || aiScore >= WINNING_SCORE) {
+                isGameActive = false;
+                const winner = playerScore >= WINNING_SCORE ? 'Player' : 'AI';
+                overlayText.textContent = `${winner} Wins!`;
+                overlayInstructions.textContent = 'Click "Play Again" to start a new game.';
+                playButton.textContent = 'Play Again';
+                overlay.style.opacity = '1';
+                overlay.style.pointerEvents = 'auto';
+            }
+        }
+
+        // Main game loop
+        function gameLoop() {
+            if (isGameActive) {
+                updateBall();
+                updateAI();
+                draw();
+                requestAnimationFrame(gameLoop);
+            }
+        }
+
+        // Start game function
+        function startGame() {
+            playerScore = 0;
+            aiScore = 0;
+            resetBall();
+            overlay.style.opacity = '0';
+            overlay.style.pointerEvents = 'none';
+            isGameActive = true;
+            gameLoop();
+        }
+        
+        // Initial setup for the overlay
+        window.onload = function() {
+            overlayText.textContent = "Welcome to Pong!";
+            overlayInstructions.textContent = "Use your mouse to move the left paddle. First to 10 points wins.";
+            playButton.addEventListener('click', startGame);
+        };
+    </script>
+</body>
+</html>
